@@ -2,12 +2,12 @@
 import {
   HttpClient,
   AnilistMeta,
-  GoyabuProvider
+  AnimeParadiseProvider
 } from '../../dist/index.js';
 
 const http = new HttpClient();
 const meta = new AnilistMeta(http);
-const content = new GoyabuProvider(http);
+const content = new AnimeParadiseProvider(http);
 
 const headers = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -15,12 +15,16 @@ const headers = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS'
 };
 
-const reply = (data, status = 200) =>
-  Response.json(data, { status, headers });
+function reply(data, status = 200) {
+  return Response.json(data, { status, headers });
+}
 
-export default async (request) => {
+export default async function handler(request) {
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers });
+    return new Response(null, {
+      status: 204,
+      headers
+    });
   }
 
   const url = new URL(request.url);
@@ -31,54 +35,87 @@ export default async (request) => {
   try {
     if (action === 'health') {
       return reply({
+        success: true,
         status: 'ok',
         service: 'AnimeFlow API',
-        contentProvider: content.id
+        provider: content.id
       });
     }
 
     if (action === 'search') {
-      if (!q) return reply({ error: 'Missing q' }, 400);
-      return reply({
-        success: true,
-        results: await meta.search(q)
-      });
+      if (!q) {
+        return reply({ success: false, error: 'Missing q' }, 400);
+      }
+
+      const results = await meta.search(q);
+      return reply({ success: true, results });
     }
 
     if (action === 'provider-search') {
-      if (!q) return reply({ error: 'Missing q' }, 400);
+      if (!q) {
+        return reply({ success: false, error: 'Missing q' }, 400);
+      }
+
+      const results = await content.search(q);
       return reply({
         success: true,
         provider: content.id,
-        results: await content.search(q)
+        results
       });
     }
 
     if (action === 'episodes') {
-      if (!id) return reply({ error: 'Missing id' }, 400);
+      if (!id) {
+        return reply({ success: false, error: 'Missing id' }, 400);
+      }
+
+      const episodes = await content.fetchContentUnits(id);
+
       return reply({
         success: true,
-        episodes: await content.fetchContentUnits(id)
+        provider: content.id,
+        total: episodes.length,
+        episodes
       });
     }
 
     if (action === 'stream') {
-      if (!id) return reply({ error: 'Missing id' }, 400);
+      if (!id) {
+        return reply({ success: false, error: 'Missing id' }, 400);
+      }
+
       const result = await content.resolveStream(id);
+
       return reply({
         success: true,
+        provider: content.id,
         result
       });
     }
 
-    return reply({ error: 'Unknown action' }, 400);
+    if (action === 'tracks') {
+      if (!id) {
+        return reply({ success: false, error: 'Missing id' }, 400);
+      }
+
+      const tracks = await content.fetchUnitTracks(id);
+
+      return reply({
+        success: true,
+        provider: content.id,
+        tracks
+      });
+    }
+
+    return reply({
+      success: false,
+      error: 'Unknown action'
+    }, 400);
 
   } catch (error) {
     return reply({
       success: false,
-      error: error instanceof Error
-        ? error.message
-        : String(error)
+      error: error instanceof Error ? error.message : String(error)
     }, 500);
   }
-};
+}
